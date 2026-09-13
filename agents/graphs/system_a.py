@@ -26,6 +26,7 @@ class SystemResult:
     llm_calls: int
     total_tokens: int
     latency_seconds: float
+    truncated: bool
 
 
 def run_system_a(
@@ -46,6 +47,7 @@ def run_system_a(
         llm_calls=1,  # retrieval here is embedding-only; Generate is the only LLM call
         total_tokens=generation.total_tokens,
         latency_seconds=generation.latency_seconds,
+        truncated=generation.truncated,
     )
 
 

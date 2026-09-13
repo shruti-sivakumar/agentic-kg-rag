@@ -10,3 +10,6 @@ numpy==2.5.3
 # Step 3: generation (Groq-hosted frozen LLM)
 groq==1.7.0
 python-dotenv==1.2.3
+
+# Step 4: evaluation harness
+pandas==3.0.5
