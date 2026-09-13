@@ -10,6 +10,9 @@ __pycache__/
 # Results output (later phases)
 results/*.csv
 
+# Secrets
+.env
+
 # OS
 .DS_Store
 
