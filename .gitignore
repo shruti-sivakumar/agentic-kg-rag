@@ -1,0 +1,17 @@
+# Downloaded/derived dataset files — large, reproducibly re-fetched by data/load_2wiki.py
+data/raw/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Results output (later phases)
+results/*.csv
+
+# OS
+.DS_Store
+
+# Claude
+CLAUDE.md
