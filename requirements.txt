@@ -1,0 +1,8 @@
+# Core dependencies, added as each build step requires them (see CLAUDE.md
+# Section 11 for the build order). Versions are pinned to what was verified
+# working during development.
+
+# Step 2: embedding + dense passage index
+sentence-transformers==6.0.1
+faiss-cpu==1.15.0
+numpy==2.5.3
