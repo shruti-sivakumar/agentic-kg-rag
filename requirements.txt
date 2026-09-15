@@ -7,8 +7,8 @@ sentence-transformers==6.0.1
 faiss-cpu==1.15.0
 numpy==2.5.3
 
-# Step 3: generation (Groq-hosted frozen LLM)
-groq==1.7.0
+# Step 3: generation (frozen LLM)
+openai==3.14.0
 python-dotenv==1.2.3
 
 # Step 4: evaluation harness
