@@ -31,6 +31,21 @@ with no gold signal, correct 87.7% of the time on questions with a
 genuine choice among candidates. That measurement, not this module's
 shortcut, is the evidence against the traversal step secretly reading
 the answer key.
+
+Taking the starting entity as given is also the prevailing convention
+in the KGQA literature, not a choice specific to this project: MetaQA
+(Zhang et al., "Variational Reasoning for Question Answering with
+Knowledge Graph," AAAI 2018) defines each question as a head entity
+plus a reasoning path plus an answer, with the head entity given as
+input rather than resolved by the system. DoG (Li et al., "Decoding
+on Graphs: Faithful and Sound Reasoning on Knowledge Graphs," 2024)
+evaluates on WebQSP, CWQ, and this project's own dataset,
+2WikiMultiHopQA, initializing its subgraph from a given query entity
+and using ground-truth reasoning paths for evaluation only — available
+for 2WikiMultiHopQA in its setup but not for WebQSP or CWQ, the same
+role gold paths play here. ProgRAG (Park et al., "ProgRAG: Hallucination-Resistant
+Progressive Retrieval and Reasoning over Knowledge Graphs," 2025)
+likewise begins each question's retrieval from a given source entity.
 """
 
 from __future__ import annotations
