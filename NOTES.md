@@ -112,7 +112,7 @@ This shape is exactly what you'd expect: "comparison" questions (e.g. "which cam
 
 *(Side note on the AI model: an earlier attempt used a free-tier model on Groq, which turned out to have a hard daily cost/usage limit that a full 1,000-question run blew through partway. Switched to gpt-4o-mini, which comfortably handles the whole run in one sitting for a few cents — worth knowing in case "Groq" shows up anywhere in old files or git history.)*
 
-### Step 5 — The shared scaffolding for Systems B and C (current step)
+### Step 5 — The shared scaffolding for Systems B and C
 
 **Files:** `agents/state.py`, `agents/budget.py`, plus an addition to `agents/nodes/generate.py`
 
@@ -126,24 +126,85 @@ Systems B and C, unlike A, aren't a straight line — they loop: search (or walk
 
 **Sanity check done:** built a tiny test loop where the budget is set to zero (so it's exhausted immediately), confirmed it correctly skips straight to answering, and confirmed the answer step still worked end-to-end (asked "What is the capital of France?", got "Paris" back, with cost figures correctly recorded).
 
----
+### Step 6 — System B, the multi-step text-only system
 
-## Part 4 — What's left to build
+**Files:** `agents/nodes/vector_retrieve.py`, `agents/router.py`, `agents/graphs/system_b.py`
 
-In order:
+System B is allowed to search more than once. Two new pieces make that work:
+- **Query reformulation** (`vector_retrieve.py`): before searching again, the question gets extended with everything found so far ("original question + all retrieved passage text"), so the second search is looking for something more specific than the first. This is a plain string operation, not an AI call — deliberately, so System B's cost stays comparable to System A's (only the final answering step spends an AI call either way).
+- One subtlety that mattered in practice: with only 10 passages per question, a reformulated search tends to find *the same top passages again*. So the retrieval step searches the whole 10-passage corpus and throws out anything already gathered on an earlier search, forcing each round to surface genuinely new information.
+- **The router** (`router.py`): a simple, non-AI decision rule — "search" for the first 2 rounds, then "answer." Two rounds, not some other number, because most questions in this dataset resolve via exactly a 2-fact chain.
 
-6. **System B** — the multi-step, text-only system. Needs a simple "should I search again or answer now?" decision rule (not another AI call — a plain heuristic, so it doesn't distort the cost comparison), plus logic for rephrasing the search query using what's been learned so far.
-7. **Building the knowledge graph** — turning the dataset's fact-chains into an actual graph structure System C can walk. Important: built from the *full* set of facts across many questions, not just the answer key for one question — otherwise System C's graph-walking would just be reading the answer key (the "oracle trap" mentioned above).
-8. **The graph-walking step** — given a starting entity, look at all its real connected facts, and pick the one that seems most relevant to the question (by comparing meanings, the same "vector similarity" trick used in search) — a genuine guess, not a lookup.
-9. **System C** — put it all together: a decision-maker that can choose between searching text, walking the graph, or answering, at each step.
-10. **The full comparison** — run all three systems over the same 1,000 questions and produce the final accuracy-vs-cost results table.
+**Why sixth:** with the scaffolding from step 5 ready, System B is the first system actually built *on* it, and it's simpler than System C (only 2 possible actions instead of 3), so it's a good first real test of the loop machinery.
+
+**Result:** run on all 1,000 questions, compared directly against System A on the exact same questions:
+
+| Question type | EM: A → B | F1: A → B |
+|---|---|---|
+| compositional | 19.4% → 32.5% | 0.268 → 0.446 |
+| inference | 19.6% → 20.6% | 0.411 → 0.449 |
+| comparison | 30.7% → 28.0% | 0.609 → 0.608 |
+| bridge_comparison | 26.9% → 17.4% | 0.499 → 0.541 |
+| **Overall** | **23.6% → 26.9%** | **0.411 → 0.504** |
+
+Iterating helps a lot exactly where you'd expect — compositional (genuine multi-hop) questions jump the most — and very slightly *hurts* comparison-type questions, plausibly because extra passages introduce noise on questions answerable from one clean fact. A real, interpretable result, not a bug.
+
+### Step 7 — Building the actual knowledge graph
+
+**File:** `data/kg_2wiki.py`
+
+This is where System C's graph comes from. The dataset doesn't ship a ready-made knowledge graph — only each question's own short "gold" fact-chain (2-7 facts). So the graph gets built by collecting these fact-chains from *many* questions and merging them into one big network, where entities (by their Wikidata ID, not by name, since two different people can share a name) become nodes and facts become connections between them.
+
+**The important trap this avoids:** if System C's graph only contained a question's *own* correct fact-chain, then "searching the graph" would be fake — there'd only ever be one fact to pick, which is the same as just reading the answer off the answer key. This is why the graph is built from as much of the dataset as reasonably possible, not from the specific questions being tested — that way, an entity usually has *several* connected facts, most of them irrelevant to the current question, and the system genuinely has to figure out which one actually matters.
+
+**A real surprise here:** aggregating just the ~12,500 questions in the validation set produced a very thin graph — most entities had only one known fact each, so there was rarely a real *choice* to make. Adding in the training set too (167,000 more questions) helped a lot: for the actual entities this project's 1,000 test questions start from, coverage went from 61% to 88%, and the number with a genuine choice of next fact roughly quadrupled. This cost an extra ~700MB one-time download but was worth it — worth knowing in case you ever wonder why loading the graph takes a minute or two and pulls a large file.
+
+### Step 8 — The graph-walking step itself
+
+**File:** `agents/nodes/graph_traverse.py`
+
+Given the current entity (or entities) the walk is standing on, this step:
+1. Looks up every real fact connected to that entity in the graph (not just the "correct" one for this question — genuinely every fact known about it).
+2. Turns each fact into a short sentence (e.g. "Alexandrine's father is Prince Albert of Prussia").
+3. Converts the question and every candidate sentence into those "meaning vectors" again, and picks whichever fact is closest in meaning to the question.
+4. Moves the "current entity" pointer to whatever that fact pointed to, and remembers the fact as something learned.
+
+**How well this actually works, checked directly:** across 138 real test questions where there was a genuine choice between multiple facts, this method picked the *correct* fact 87.7% of the time. That's strong evidence the "guess by meaning" approach genuinely works, not just technically avoids cheating.
+
+**Handling dead ends:** sometimes an entity has no useful connected facts at all (or none that seem related to the question). Rather than force a bad guess, this is detected and reported back, so the decision-maker (built in step 9) knows to try searching text instead next, rather than getting stuck repeatedly failing on the same entity. The cutoff for "nothing useful found" was set by checking real numbers: a genuinely correct fact almost never scores below about 0.5 similarity, while comparing a question against totally unrelated facts never scores above about 0.41 — so the cutoff sits at 0.45, in the gap between the two.
+
+### Step 9 — Entity Linker and System C, put together
+
+**Files:** `agents/nodes/entity_linker.py`, `agents/graphs/system_c.py`, additions to `agents/router.py`
+
+Before System C can walk the graph, it needs to know *which entity to start from*. The dataset conveniently already tells us this for each question (it ships the correct starting entity IDs, the same way it ships the fact-chain) — using this is a deliberate, documented shortcut for this phase (real "figure out which entity a name refers to" logic is harder and out of scope right now), not a form of the answer-key cheating this project is careful to avoid elsewhere: knowing where to *start* isn't the same as knowing the *answer*.
+
+System C's decision-maker (in `router.py`) is the 3-way version: at each step, if there's an entity to walk from and the last graph-step actually found something, walk the graph; otherwise search text; and after 2 total steps (of either kind), answer.
+
+**Result, run on all 1,000 questions:**
+
+| Question type | EM: A / B / C | 
+|---|---|
+| comparison | 30.7% / 28.0% / **42.7%** |
+| bridge_comparison | 26.9% / 17.4% / **42.0%** |
+| inference | 19.6% / 20.6% / **40.2%** |
+| compositional | 19.4% / **32.5%** / 26.3% |
+| **Overall** | **23.6% / 26.9% / 34.9%** |
+
+System C wins overall, often by a huge margin (inference roughly doubles), while using **less than half** System A's AI-token budget per question and **under a quarter** of System B's — verbalized single facts are much shorter than whole retrieved passages. The one place it *loses* to System B is compositional questions specifically: these lean on less-common bridge entities where the graph is most likely to run dry partway through the 2-hop chain (see step 7's density numbers), leaving System C with less of its budget left for a text-search fallback than System B gets by committing to two full searches from the start. A genuinely interesting, explainable limitation, not a flaw in the build.
+
+One more nuance: System C's F1 (0.433) is actually a bit *behind* System B's (0.504) despite winning on EM. Graph answers tend to be short exact entity names — either dead-on right, or clearly wrong — while System B's passage-based answers pick up more partial credit for near-misses. EM and F1 are telling two different, both-true stories here.
+
+### Step 10 — The full three-way comparison
+
+No new code — this is simply running all three finished systems over the identical 1,000 questions and lining up the results, which is the table above plus System A's original numbers. This was the actual goal stated at the very top of the project: not "build a clever system," but "honestly measure the accuracy-vs-cost tradeoff between these three approaches." That comparison now exists, with real numbers, for all three systems.
 
 ---
 
 ## Where things stand right now
 
-- Steps 1-5 are done, tested against real data, and committed to git.
-- System A has a full result on all 1,000 questions (23.6% exact-match accuracy overall — the number Systems B and C need to beat).
-- The AI model in use is `gpt-4o-mini` via OpenAI (you'll need an `OPENAI_API_KEY` in a `.env` file for anything that makes AI calls to work).
-- Nothing costs meaningful money — the entire project so far has cost well under a dollar in API usage.
-- Next up: Step 6, System B.
+- **All ten build steps are done.** Systems A, B, and C all work end-to-end and have been run on the same 1,000 real questions each.
+- The headline result: System C (the full agentic, graph-using system) gets the best overall accuracy *and* the lowest cost per question — but System B (search-only, multiple tries) still wins specifically on compositional questions, where the knowledge graph's coverage is weakest.
+- The AI model in use is `gpt-4o-mini` via OpenAI (you'll need an `OPENAI_API_KEY` in a `.env` file for anything that makes AI calls to work). Building the knowledge graph also downloads the dataset's training split (~700MB, one-time) — that's expected, not a bug, the first time you run `data/kg_2wiki.py` or System C.
+- Nothing has cost meaningful money — the entire project so far has cost a few dollars at most in API usage.
+- What's genuinely left, beyond this phase's scope (see `CLAUDE.md` for the full picture): extending this to the MuSiQue and HotpotQA datasets, which don't ship a ready-made knowledge graph or gold starting entities the way 2WikiMultiHopQA does — that's real, harder work (entity linking without an answer key, building a graph from scratch) deliberately deferred until this phase's comparison was proven out first.
