@@ -21,19 +21,29 @@ All three share the same frozen LLM, prompt template, and embedding model, so di
 | 7 | Knowledge-graph construction | Done |
 | 8 | Graph-Traverse node | Done |
 | 9 | System C | Done |
-| 10 | Full comparison run | Pending |
+| 10 | Full comparison run | Done |
 
-Paired results on the same 1,000-question validation sample (Systems A and B; System C not yet run at full scale):
+Paired results, same 1,000-question validation sample, all three systems:
 
-| Question type | EM (A → B) | F1 (A → B) |
-|---|---|---|
-| compositional | 0.194 → 0.325 | 0.268 → 0.446 |
-| inference | 0.196 → 0.206 | 0.411 → 0.449 |
-| comparison | 0.307 → 0.280 | 0.609 → 0.608 |
-| bridge_comparison | 0.269 → 0.174 | 0.499 → 0.541 |
-| **Overall** | **0.236 → 0.269** | **0.411 → 0.504** |
+| Metric | A | B | C |
+|---|---|---|---|
+| EM | 0.236 | 0.269 | **0.349** |
+| F1 | 0.411 | **0.504** | 0.433 |
+| Avg tokens/question | 377 | 666 | **154** |
+| Avg latency/question | 0.94s | 0.88s | 0.84s |
 
-Iteration (System B) helps most on compositional questions — genuine multi-hop chains — and slightly hurts comparison-type questions, plausibly from added retrieval noise on questions answerable from one clean passage. A 5-question spot check of System C shows it resolving full 2-hop gold chains via genuine graph traversal alone, at substantially lower token cost than A/B's passage-based context; a full 1,000-question run is the remaining step.
+By question type (EM):
+
+| Question type | A | B | C |
+|---|---|---|---|
+| comparison | 0.307 | 0.280 | **0.427** |
+| bridge_comparison | 0.269 | 0.174 | **0.420** |
+| inference | 0.196 | 0.206 | **0.402** |
+| compositional | 0.194 | **0.325** | 0.263 |
+
+System C reaches the best overall exact-match accuracy at well under half System A's token cost and under a quarter of System B's, and dominates on three of four question types (nearly doubling System A/B's accuracy on inference questions). The exception is compositional (genuine bridge-chain) questions, where System B wins: these questions lean on less-common bridge entities where the knowledge graph is most likely to dead-end partway through the chain (see step 7 below on graph sparsity), leaving less retrieval budget for the fallback than System B gets by committing to two full retrieval rounds from the start. System C's F1 (0.433) also trails System B's (0.504) despite C's higher EM: graph-traversal answers tend to be exactly right or completely wrong, while System B's passage-based answers pick up more partial credit on near-misses.
+
+Iteration alone (System B over A) helps most on compositional questions and slightly hurts comparison-type questions, plausibly from added retrieval noise on questions answerable from one clean passage.
 
 ## Setup
 
