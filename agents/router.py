@@ -46,3 +46,32 @@ def route_system_b(state: AgentState) -> Literal["retrieve", "generate"]:
     if state["hop_count"] < TARGET_RETRIEVALS_B:
         return "retrieve"
     return "generate"
+
+
+# Same rationale as TARGET_RETRIEVALS_B: two hops covers most gold
+# reasoning paths in this dataset. System C counts any hop toward this
+# total regardless of action (a Vector-Retrieve hop and a Graph-Traverse
+# hop count the same), so this is a total-hops budget, not a per-action one.
+TARGET_HOPS_C = 2
+
+
+def route_system_c(state: AgentState) -> Literal["retrieve", "traverse", "generate"]:
+    """System C's three-way router.
+
+    Graph-Traverse is preferred over Vector-Retrieve whenever there is
+    a frontier to walk from and the previous hop (if the previous hop
+    was a traversal) made progress. `made_progress` is what prevents
+    the router from retrying a frontier Graph-Traverse has already
+    reported as a dead end: since neither the frontier nor
+    `made_progress` changes on a dead-end hop, retrying it would only
+    reproduce the same dead end, so once it goes false the router
+    falls back to Vector-Retrieve for the remainder of the walk (or
+    until Vector-Retrieve's own gathered context is judged sufficient).
+    """
+    if budget_exhausted(state):
+        return "generate"
+    if state["hop_count"] >= TARGET_HOPS_C:
+        return "generate"
+    if state["entity_frontier"] and state["made_progress"]:
+        return "traverse"
+    return "retrieve"
