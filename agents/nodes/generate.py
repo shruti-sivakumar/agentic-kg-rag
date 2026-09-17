@@ -42,6 +42,8 @@ import openai
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from agents.state import AgentState
+
 load_dotenv()
 
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -156,3 +158,23 @@ def generate_answer(
         latency_seconds=latency,
         truncated=choice.finish_reason == "length",
     )
+
+
+def generate_node(state: AgentState) -> dict:
+    """LangGraph node wrapping `generate_answer` for Systems B and C.
+
+    `answer` overwrites (Generate runs at most once per walk in the
+    current design); `call_count`, `total_tokens`, and
+    `total_latency_seconds` are increments merged by the state schema's
+    reducers, so they accumulate correctly alongside whatever Vector-
+    Retrieve or Graph-Traverse already contributed. `truncated` is
+    merged by logical OR, so one truncated call marks the whole walk.
+    """
+    result = generate_answer(state["question"], state["accumulated_context"])
+    return {
+        "answer": result.answer,
+        "call_count": 1,
+        "total_tokens": result.total_tokens,
+        "total_latency_seconds": result.latency_seconds,
+        "truncated": result.truncated,
+    }
