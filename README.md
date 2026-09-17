@@ -45,6 +45,8 @@ System C reaches the best overall exact-match accuracy at well under half System
 
 Iteration alone (System B over A) helps most on compositional questions and slightly hurts comparison-type questions, plausibly from added retrieval noise on questions answerable from one clean passage.
 
+**What these cost figures do and don't include:** all cost numbers above (tokens, latency) are per-question, query-time cost only — the LLM calls and time spent answering a question once the knowledge graph already exists. They exclude the one-time cost of building that graph (downloading the ~700MB training split, parsing ~180,000 questions, producing 165,826 nodes / 171,536 edges — informally observed to take a minute or two, but not rigorously timed or logged) and say nothing about the cost of updating it incrementally versus rebuilding from scratch. Both are explicitly out of scope for this phase (see `CLAUDE.md`) and are planned as a later experiment, not an oversight — System C's apparent cost advantage should be read as an amortized, query-time-only figure until that work exists.
+
 ## Setup
 
 ```bash
