@@ -28,6 +28,14 @@ evaluation harness if it survives to the end of the walk. Threading it
 through the state's own reducers keeps it consistent with how every
 other running total in the walk is accumulated, rather than requiring
 a separate mechanism outside the graph.
+
+`made_progress` exists for System C's Graph-Traverse step: it reports
+whether the most recent hop actually found something (a real outgoing
+edge scoring above the dead-end threshold), so that System C's router
+can tell a frontier worth continuing to traverse apart from one that
+has gone stale, without needing to re-inspect the graph itself. It
+reflects only the outcome of the most recent hop, not a running total,
+so it uses default overwrite semantics rather than a reducer.
 """
 
 from __future__ import annotations
@@ -50,6 +58,7 @@ class AgentState(TypedDict):
     total_tokens: Annotated[int, operator.add]
     total_latency_seconds: Annotated[float, operator.add]
     truncated: Annotated[bool, operator.or_]  # any generation call hit its token cap
+    made_progress: bool  # did the most recent hop find a real, above-threshold candidate?
 
 
 def initial_state(
@@ -77,4 +86,5 @@ def initial_state(
         total_tokens=0,
         total_latency_seconds=0.0,
         truncated=False,
+        made_progress=True,
     )
