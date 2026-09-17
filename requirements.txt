@@ -13,3 +13,9 @@ python-dotenv==1.2.3
 
 # Step 4: evaluation harness
 pandas==3.0.5
+
+# Step 5: agent orchestration (Systems B and C)
+langgraph==1.2.11
+
+# Step 7: knowledge-graph construction
+networkx==3.6.1

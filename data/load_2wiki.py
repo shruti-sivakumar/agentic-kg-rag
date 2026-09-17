@@ -86,11 +86,13 @@ from pathlib import Path
 _DATA_IDS_ZIP_URL = "https://www.dropbox.com/s/7ep3h8unu2njfxv/data_ids.zip?dl=1"
 _ZIP_MEMBER_DEV = "data_ids/dev.json"
 _ZIP_MEMBER_ID_ALIASES = "data_ids/id_aliases.json"
+_ZIP_MEMBER_TRAIN = "data_ids/train.json"
 
 RAW_DIR = Path(__file__).resolve().parent / "raw"
 _CACHE_ZIP = RAW_DIR / "data_ids.zip"
 _DEV_JSON = RAW_DIR / "dev.json"
 _ID_ALIASES_JSON = RAW_DIR / "id_aliases.json"
+_TRAIN_JSON = RAW_DIR / "train.json"
 
 VALID_QUESTION_TYPES = {"comparison", "inference", "compositional", "bridge_comparison"}
 
@@ -120,25 +122,35 @@ class Example:
     passages: list[Passage]
 
 
-def _download_raw(force: bool = False) -> None:
-    """Fetch and cache dev.json and id_aliases.json from the source archive.
+def _download_raw(force: bool = False, include_train: bool = False) -> None:
+    """Fetch and cache the source archive's members from data/raw/.
 
-    Downloaded files are written to data/raw/, which is not version
-    controlled: the files are large and are deterministically re-derivable
-    from the source URL.
+    `include_train` is off by default: the training split is over
+    160,000 records and is not needed for sampling or corpus
+    construction, only for building a denser knowledge graph (see
+    kg_2wiki.py) than the validation split alone supports. Downloaded
+    files are written to data/raw/, which is not version controlled:
+    they are large and deterministically re-derivable from the source
+    URL.
     """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    if _DEV_JSON.exists() and _ID_ALIASES_JSON.exists() and not force:
+    required = [_DEV_JSON, _ID_ALIASES_JSON]
+    if include_train:
+        required.append(_TRAIN_JSON)
+    if all(p.exists() for p in required) and not force:
         return
 
     if not _CACHE_ZIP.exists() or force:
         urllib.request.urlretrieve(_DATA_IDS_ZIP_URL, _CACHE_ZIP)
 
+    members = [(_ZIP_MEMBER_DEV, _DEV_JSON), (_ZIP_MEMBER_ID_ALIASES, _ID_ALIASES_JSON)]
+    if include_train:
+        members.append((_ZIP_MEMBER_TRAIN, _TRAIN_JSON))
+
     with zipfile.ZipFile(_CACHE_ZIP) as zf:
-        for member, target in (
-            (_ZIP_MEMBER_DEV, _DEV_JSON),
-            (_ZIP_MEMBER_ID_ALIASES, _ID_ALIASES_JSON),
-        ):
+        for member, target in members:
+            if target.exists() and not force:
+                continue
             with zf.open(member) as src, open(target, "wb") as dst:
                 dst.write(src.read())
 
@@ -213,6 +225,24 @@ def load_2wiki(
         raw_records = random.Random(seed).sample(raw_records, n)
 
     return [_parse_record(r) for r in raw_records]
+
+
+def load_raw_records(split: str = "dev") -> list[dict]:
+    """Return a split's raw JSON records, without building Example/Passage objects.
+
+    Knowledge-graph construction (kg_2wiki.py) only needs the
+    `evidences`/`evidences_id` fields of each record, aggregated across
+    as much of the dataset as practical; building a ten-passage
+    `Example` for every one of the training split's ~167,000 records
+    to reach those two fields would cost far more time and memory than
+    the graph-building step needs.
+    """
+    if split not in ("dev", "train"):
+        raise ValueError(f"unsupported split: {split!r}")
+    _download_raw(include_train=(split == "train"))
+    path = _DEV_JSON if split == "dev" else _TRAIN_JSON
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def load_id_aliases() -> dict[str, dict]:
