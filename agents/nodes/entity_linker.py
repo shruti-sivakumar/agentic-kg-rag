@@ -15,6 +15,22 @@ detection is still performed and is not a no-op: a question with no
 detectable entity mention seeds an empty frontier, which is exactly
 the condition System C's router treats as "no graph walk is possible
 from here" and falls back to Vector-Retrieve on.
+
+This is a documented simplification, not a claim that entity
+resolution is a solved non-problem: it is set aside for this phase
+because the starting entity is always a name already present in the
+question text (a proper noun the question hands the system directly),
+never a hidden intermediate entity the walk would need to have
+discovered. Resolving it is therefore a different problem from the
+multi-hop reasoning under test, and leaks no part of the reasoning
+path itself. That the reasoning path is not being leaked elsewhere is
+not asserted on this basis alone — it is the property that
+`graph_traverse.py`'s edge scoring is measured against directly (see
+its module docstring): every hop after the starting entity is selected
+with no gold signal, correct 87.7% of the time on questions with a
+genuine choice among candidates. That measurement, not this module's
+shortcut, is the evidence against the traversal step secretly reading
+the answer key.
 """
 
 from __future__ import annotations
